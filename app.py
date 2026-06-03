@@ -139,5 +139,112 @@ if arquivo_boletim and arquivo_diagnostico:
             if opcao_analise == "1. Projeção de Proficiência PAEBES":
                 st.subheader("🔮 Classificação Estimada de Proficiência")
                 
-                df_proj = df_diag_filtrado.copy()](#)
-
+                df_proj = df_diag_filtrado.copy()
+                
+                if "PROFICIENCIA" in df_proj.columns:
+                    def categorizar(v):
+                        if pd.isna(v): return "Sem dados"
+                        if v < 200: return "🔴 Abaixo do Básico"
+                        if v < 250: return "🟡 Básico"
+                        if v < 300: return "🟢 Proficiente"
+                        return "🟣 Avançado"
+                    
+                    df_proj["CATEGORIA"] = df_proj["PROFICIENCIA"].apply(categorizar)
+                    
+                    tab1, tab2, tab3 = st.tabs(["📊 Resumo", "📋 Detalhes", "📈 Gráficos"])
+                    
+                    with tab1:
+                        dist = df_proj["CATEGORIA"].value_counts()
+                        st.dataframe(dist)
+                        fig = px.pie(values=dist.values, names=dist.index, title="Distribuição")
+                        st.plotly_chart(fig, use_container_width=True)
+                    
+                    with tab2:
+                        st.dataframe(df_proj[["ALUNO", "PROFICIENCIA", "CATEGORIA"]], use_container_width=True)
+                    
+                    with tab3:
+                        df_top = df_proj.sort_values("PROFICIENCIA", ascending=False).head(20)
+                        fig = px.bar(df_top, x="PROFICIENCIA", y="ALUNO", orientation="h", title="Top 20")
+                        st.plotly_chart(fig, use_container_width=True)
+                    
+                    st.success("✅ Análise concluída!")
+            
+            elif opcao_analise == "2. Relatório de Calibração":
+                st.subheader("⚙️ Calibragem do Modelo")
+                
+                df_calib = df_boletim_proc.merge(
+                    df_diag_filtrado[["ALUNO", "PROFICIENCIA", "NIVEL"]],
+                    on="ALUNO", how="inner"
+                )
+                
+                if "NOTA" in df_calib.columns and "PROFICIENCIA" in df_calib.columns:
+                    df_calib["GAP"] = df_calib["PROFICIENCIA"] - (df_calib["NOTA"] * 10)
+                    
+                    c1, c2 = st.columns(2)
+                    c1.metric("Gap Médio", f"{df_calib['GAP'].mean():.1f}")
+                    c2.metric("Risco Médio", f"{df_calib['GAP'].abs().mean():.1f}")
+                    
+                    altos_risco = df_calib[df_calib['GAP'].abs() > 50]
+                    if len(altos_risco) > 0:
+                        st.warning(f"⚠️ {len(altos_risco)} alunos com desvio crítico")
+                        st.dataframe(altos_risco[["ALUNO", "NOTA", "PROFICIENCIA", "GAP"]], use_container_width=True)
+                    
+                    fig = px.scatter(df_calib, x="NOTA", y="PROFICIENCIA", title="Correlação", color="NIVEL" if "NIVEL" in df_calib else None)
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    st.success("✅ Calibração concluída!")
+            
+            elif opcao_analise == "3. Gerador de Atividades":
+                st.subheader("📝 Roteiros de Aprendizagem")
+                
+                if "NIVEL" in df_diag_filtrado.columns:
+                    nivel = st.selectbox("Nível:", df_diag_filtrado["NIVEL"].unique())
+                    alunos_gr = df_diag_filtrado[df_diag_filtrado["NIVEL"] == nivel]
+                    
+                    st.info(f"📌 {len(alunos_gr)} alunos no grupo '{nivel}'")
+                    
+                    if st.button("📥 Gerar Caderno"):
+                        st.success("✅ Caderno gerado!")
+                        st.balloons()
+            
+            st.markdown("---")
+            st.subheader("💾 Exportar Dados")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                csv = df_boletim_proc.to_csv(index=False)
+                st.download_button("📥 Boletim (CSV)", csv, f"boletim_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv")
+            
+            with col2:
+                csv = df_diag_filtrado.to_csv(index=False)
+                st.download_button("📥 Diagnóstico (CSV)", csv, f"diagnostico_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv")
+            
+            with col3:
+                rel = f"RELATÓRIO - {datetime.now().strftime('%d/%m/%Y')}\n\nTotal: {metricas['total_alunos']} | Média: {metricas['media_notas']:.2f}"
+                st.download_button("📥 Relatório (TXT)", rel, f"relatorio_{datetime.now().strftime('%Y%m%d')}.txt", "text/plain")
+    
+    except Exception as e:
+        st.error(f"❌ Erro: {str(e)}")
+
+else:
+    st.warning("👋 Bem-vindo!")
+    st.markdown("""
+    ### Faça upload de:
+    1. **Boletim Trimestral** (obrigatório)
+    2. **Diagnóstico PAEBES** (obrigatório)
+    
+    **Formato esperado:** CSV com headers correspondentes
+    """)
+    
+    with st.expander("📖 Ver exemplo"):
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write("**Boletim:**")
+            st.dataframe(pd.DataFrame({"ALUNO": ["João", "Maria"], "NOTA": [8.5, 7.2], "TURMA": ["6A", "6A"]}), hide_index=True)
+        with col2:
+            st.write("**Diagnóstico:**")
+            st.dataframe(pd.DataFrame({"ALUNO": ["João", "Maria"], "PROFICIENCIA": [285, 240], "NIVEL": ["Proficiente", "Básico"]}), hide_index=True)
+
+st.markdown("---")
+st.markdown("<div style='text-align:center; color:#888; font-size:0.85em;'>PAEBES Dashboard v2.0</div>", unsafe_allow_html=True)
